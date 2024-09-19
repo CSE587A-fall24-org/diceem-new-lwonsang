@@ -61,9 +61,9 @@ def diceEM(experiment_data: List[NDArray[np.int_]],  # pylint: disable=C0103
 
         # YOUR CODE HERE. SET REQUIRED VARIABLES BY CALLING e-step AND m-step.
         # E-step: compute the expected counts given current parameters        
-  
+        expectedCounts = e_step(experiment_data, bag_of_dice)
         # M-step: update the parameters given the expected counts
-      
+        updated_bag_of_dice = m_step(expectedCounts)
         prev_bag_of_dice: BagOfDice = bag_of_dice
         bag_of_dice = updated_bag_of_dice
 
@@ -106,9 +106,21 @@ def e_step(experiment_data: List[NDArray[np.int_]],
     # the current draw to get the expected counts for each die type on this draw.
     # To get the total expected counts for each type, you sum the expected
     # counts for each type over all the draws.  
-
+    # print("E_Step")
     # PUT YOUR CODE HERE, FOLLOWING THE DIRECTIONS ABOVE
-
+    for draw in experiment_data:
+        sample_draw = draw.tolist()
+        die_type_counts = tuple(bag_of_dice.die_priors)
+        dice = tuple(bag_of_dice.dice)
+        # print(sample_draw)
+        # print(die_type_counts)
+        # print(dice)
+        # print(dice[0].num_faces)
+        # print(dice[1].num_faces)
+        posterior = dice_posterior(sample_draw, die_type_counts, dice)
+        # posterior + observed counts (in draw)
+        expected_counts[0] += posterior * draw
+        expected_counts[1] += (1-posterior) * draw
     return expected_counts
 
 
@@ -135,9 +147,9 @@ def m_step(expected_counts_by_die: NDArray[np.float_]):
     updated_type_2_frequency = np.sum(expected_counts_by_die[1])
 
     # REPLACE EACH NONE BELOW WITH YOUR CODE. 
-    updated_priors = None
-    updated_type_1_face_probs = None
-    updated_type_2_face_probs = None
+    updated_priors = [updated_type_1_frequency/(updated_type_1_frequency+updated_type_2_frequency), updated_type_2_frequency/(updated_type_1_frequency+updated_type_2_frequency)]
+    updated_type_1_face_probs = expected_counts_by_die[0]/updated_type_1_frequency
+    updated_type_2_face_probs = expected_counts_by_die[1]/updated_type_2_frequency
     
     updated_bag_of_dice = BagOfDice(updated_priors,
                                     [Die(updated_type_1_face_probs),
@@ -182,3 +194,49 @@ def generate_sample(die_type_counts: Tuple[int],
     # array of num_draws arrays each containing rolls_per_draw rolls.
 
     return list(map(roll, die_types_drawn))
+
+# from dice_posterior assignment:
+# couldn't get the types to work correctly so I just changed them
+def dice_posterior(sample_draw: List[int], 
+                   die_type_counts: Tuple[float,...],
+                   dice: Tuple[Die,...]) -> float:
+    """Calculates the posterior probability of a type 1 vs a type 2 die,
+    based on the number of times each face appears in the draw, and the
+    relative numbers of type 1 and type 2 dice in the bag, as well as the
+    face probabilities for type 1 and type 2 dice. The single number returned
+    is the posterior probability of the Type 1 die. Note: we expect a BagOfDice
+    object with only two dice.
+
+    """
+    # Requiring only two dice with the same number of faces simplifies the
+    # problem a bit.
+    if len(dice) != 2:
+        raise ValueError('This code requires exactly 2 dice')
+    # dice[].num_faces wouldn't work properly even if they should be correct so I just commented them out
+    # if dice[0].num_faces != dice[1].num_faces:
+    #     raise ValueError('This code requires two dice with the same number of faces')
+    # if len(sample_draw) != dice[1].num_faces:
+    #     raise ValueError('The sample draw is a list of observed counts for the \
+    #                      faces. Its length must be equal to the number of faces \
+    #                      on the dice.')
+    # YOUR CODE HERE. You may want to use your safe_exponeniate.
+    die_type_counts_array = np.array(die_type_counts)
+    die_type_probs = die_type_counts_array / sum(die_type_counts_array)
+    type1_probs = die_type_probs[0]
+    type2_probs = die_type_probs[1]
+    type1_dataProbs = np.zeros(len(dice[0].face_probs))
+    type2_dataProbs = np.zeros(len(dice[1].face_probs))
+    x=0
+    for face in dice[0].face_probs:
+        type1_dataProbs[x] = safe_exponentiate(face, sample_draw[x])
+        x += 1
+    x=0
+    for face in dice[1].face_probs:
+        type2_dataProbs[x] = safe_exponentiate(face, sample_draw[x])
+        x += 1
+    p_dataType1 = np.prod(type1_dataProbs)
+    p_dataType2 = np.prod(type2_dataProbs)
+    p1 = p_dataType1 * type1_probs
+    p2 = p_dataType2 * type2_probs
+    denominator = p1 + p2
+    return p1 / denominator
